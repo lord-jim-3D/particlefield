@@ -16,15 +16,15 @@ export default function ParticleFieldVanilla() {
     let scene: THREE.Scene;
     let camera: THREE.PerspectiveCamera;
     let renderer: THREE.WebGLRenderer;
-    let particles: THREE.Points;
     let htmlRenderer: any;
     let htmlDiv: HTMLDivElement;
-    let group: THREE.Group;
+    let tvMesh: THREE.Mesh;
+    let screenMesh: THREE.Mesh;
+    let floorMesh: THREE.Mesh;
+    let ambientLight: THREE.AmbientLight;
+    let spotLight: THREE.SpotLight;
     let controls: OrbitControls;
     let composer: EffectComposer;
-
-    const mouse = { x: 0, y: 0 };
-    const particleCount = 5000;
 
     async function init() {
       // Import html-in-canvas modules
@@ -38,21 +38,24 @@ export default function ParticleFieldVanilla() {
 
       // Create scene
       scene = new THREE.Scene();
-      scene.fog = new THREE.Fog(0x000000, 1, 10);
+        scene.fog = new THREE.Fog(0x000000, 6, 30);
 
       // Create camera
       camera = new THREE.PerspectiveCamera(
-        75,
+        45,
         window.innerWidth / window.innerHeight,
         0.1,
-        1000
+        100
       );
-      camera.position.z = 5;
+      camera.position.set(0, 2, -5);
 
       // Create WebGL renderer
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setClearColor(0x000000, 1);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       
       // CRITICAL: Add layoutsubtree attribute BEFORE appending
       renderer.domElement.setAttribute('layoutsubtree', '');
@@ -70,39 +73,45 @@ export default function ParticleFieldVanilla() {
       console.log('HTML Renderer connected, canvas has layoutsubtree:', 
         renderer.domElement.hasAttribute('layoutsubtree'));
 
-      // Create particles
-      const geometry = new THREE.BufferGeometry();
-      const positions = new Float32Array(particleCount * 3);
+      // Minimal ambient to keep silhouettes readable
+      ambientLight = new THREE.AmbientLight(0x111111, 0.35);
+      scene.add(ambientLight);
 
-      for (let i = 0; i < particleCount * 3; i += 3) {
-        positions[i] = (Math.random() - 0.5) * 10;
-        positions[i + 1] = (Math.random() - 0.5) * 10;
-        positions[i + 2] = (Math.random() - 0.5) * 10;
-      }
 
-      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-      // Add colors for each particle (gradient from cyan to magenta)
-      const colors = new Float32Array(particleCount * 3);
-      for (let i = 0; i < particleCount * 3; i += 3) {
-        const t = Math.random();
-        colors[i] = 0.2 + t * 0.8;     // R: cyan to magenta
-        colors[i + 1] = 0.4 + t * 0.4; // G: moderate green
-        colors[i + 2] = 1.0;            // B: full blue
-      }
-      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-      const material = new THREE.PointsMaterial({
-        size: 0.015,
-        transparent: true,
-        opacity: 0.9,
-        blending: THREE.AdditiveBlending,
-        vertexColors: true,
-        sizeAttenuation: true,
+      // Floor plane to suggest an infinite surface
+      const floorGeometry = new THREE.PlaneGeometry(50, 50, 50, 50);
+      const floorMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1c1c1c,
+        roughness: 0.9,
+        metalness: 0.0,
+        depthWrite: false,
       });
+      floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
+      floorMesh.rotation.x = -Math.PI / 2;
+      floorMesh.position.y = 0;
+      floorMesh.receiveShadow = true;
+      scene.add(floorMesh);
 
-      particles = new THREE.Points(geometry, material);
-      scene.add(particles);
+      // Subject cube
+      const tvGeometry = new THREE.BoxGeometry(2, 2, 2);
+      const tvMaterial = new THREE.MeshStandardMaterial({
+        color: 0x888888,
+        roughness: 0.7,
+        metalness: 0.0,
+      });
+      tvMesh = new THREE.Mesh(tvGeometry, tvMaterial);
+      tvMesh.position.set(0, 1, -8);
+      tvMesh.castShadow = true;
+      scene.add(tvMesh);
+
+      spotLight = new THREE.SpotLight(0xffffff, 2.4, 40, Math.PI / 7, 0.2, 0.7);
+      spotLight.position.set(0, 7, -8);
+      spotLight.castShadow = true;
+      spotLight.shadow.mapSize.set(1024, 1024);
+      spotLight.shadow.bias = -0.0002;
+      spotLight.target = tvMesh;
+      scene.add(spotLight);
+      scene.add(spotLight.target);
 
       // Create HTML element - match the examples (no box-sizing!)
       htmlDiv = document.createElement('div');
@@ -110,36 +119,27 @@ export default function ParticleFieldVanilla() {
         width: 400px;
         height: 400px;
         padding: 10px;
-        background: rgba(0, 0, 0, 0.9);
-        color: white;
-        font-family: system-ui;
-        overflow: visible;
+        background: rgba(5, 5, 5, 0.92);
+        color: #eaeaea;
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        overflow: auto;
       `;
       htmlDiv.innerHTML = `
-        <h2 style="margin: 0 0 8px 0; color: #4488ff; font-size: 16px;">HTML in Canvas! 🎉</h2>
-        <p style="margin: 0 0 12px 0; font-size: 13px; line-height: 1.3;">This HTML is rendered on canvas.</p>
-        <button id="htmlButton" style="
-          background: #4488ff;
-          border: none;
-          color: white;
-          padding: 8px 16px;
-          border-radius: 5px;
-          cursor: pointer;
-          font-size: 13px;
-          display: block;
-          width: 100%;
-          margin-bottom: 8px;
-        ">Click Counter: 0</button>
-        <input type="text" placeholder="Type something..." style="
-          width: 100%;
-          padding: 8px;
-          border: 1px solid #4488ff;
-          border-radius: 5px;
-          background: rgba(255, 255, 255, 0.1);
-          color: white;
-          font-size: 13px;
-          box-sizing: border-box;
-        ">
+        <h2 style="margin: 0 0 10px 0; color: #8fb3ff; font-size: 16px;">A Vision</h2>
+        <div style="font-size: 12px; line-height: 1.5; color: #d6d6d6;">
+          <p style="margin: 0 0 10px 0;">"A vision I had in my sleep last night - as distinguished from a dream which is mere sorting and cataloguing of the day's events by the subconscious. This was a vision, fresh and clear as a mountain stream - the mind revealing itself to itself. In my vision, I was on the veranda of a vast estate, a palazzo of some fantastic proportion. There seemed to emanate from it a light from within - this gleaming radiant marble. I had known this place. I had in fact been born and raised there. This was my first return, a reunion with the deepest wellsprings of my being. Wandering about, I was happy that the house had been immaculately maintained. There had been added a number of additional rooms, but in a way it blended so seamlessly with the original construction, one would never detect any difference. Returning to the house's grand foyer, there came a knock at the door. My son was standing there. He was happy and care-free, clearly living a life of deep harmony and joy. We embraced - a warm and loving embrace, nothing withheld. We were in this moment one. My vision ended. I awoke with a tremendous of optimism and confidence in you and your future. That was my vision; it was of you. I'm so glad to have had this opportunity to share it with you. I wish you nothing but the very best, always."</p>
+        </div>
+        <div style="margin: 12px 0 0 0; padding: 0 15%;">
+          <img src="/content/briggs.jpg" alt="Briggs" style="display: block; width: 100%; height: auto;">
+        </div>
+        <div style="margin: 12px 0 0 0; padding: 0 10%;">
+          <a href="https://vimeo.com/1187123557" target="_blank" rel="noopener" style="text-decoration: none;">
+            <div style="width: 100%; background: #111; border: 1px solid #2b2b2b; padding: 14px; box-sizing: border-box;">
+              <div style="font-size: 12px; color: #cfcfcf; margin: 0 0 8px 0;">Watch the video on Vimeo</div>
+              <div style="display: inline-block; padding: 6px 10px; background: #2d6bff; color: #fff; font-size: 12px;">Play</div>
+            </div>
+          </a>
+        </div>
       `;
       
       // CRITICAL: Add HTML element INSIDE the canvas, not to body
@@ -149,19 +149,7 @@ export default function ParticleFieldVanilla() {
       htmlDiv.style.width = '400px';
       htmlDiv.style.height = '400px';
 
-      // Add button click handler
-      let clickCount = 0;
-      const button = htmlDiv.querySelector('#htmlButton') as HTMLButtonElement;
-      button.addEventListener('click', () => {
-        clickCount++;
-        button.textContent = `Click Counter: ${clickCount}`;
-      });
-
-      // Create group and add HTML plane
-      group = new THREE.Group();
-      
-      // Create plane geometry - match the example ratio
-      // HTML element is 400x400, use a 2x2 plane like the example
+      // Create screen plane - match the example ratio
       const planeGeometry = new THREE.PlaneGeometry(2, 2);
       
       // Explicitly set bounding box to match plane size
@@ -175,28 +163,13 @@ export default function ParticleFieldVanilla() {
         color: 0xffffff,
         side: THREE.DoubleSide,
       });
-      const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-      
-      group.add(plane);
-      group.position.set(0, 0, 0); // Centered at origin
-      scene.add(group);
-      
-      console.log('Group position:', group.position);
-      console.log('Plane position:', plane.position);
-      console.log('Camera position:', camera.position);
-      
+      screenMesh = new THREE.Mesh(planeGeometry, planeMaterial);
+      screenMesh.position.set(0, 1, -6.98);
+      screenMesh.rotation.y = Math.PI;
+      scene.add(screenMesh);
+
       // CRITICAL: Register the HTML element with the mesh using ThreeHTMLRenderer
-      htmlRenderer.addObject(htmlDiv, plane);
-      
-      console.log('Plane mesh created:');
-      console.log('  - HTML element registered with renderer');
-      console.log('  - Element dimensions:', htmlDiv.offsetWidth, 'x', htmlDiv.offsetHeight);
-      console.log('  - Plane geometry size:', planeGeometry.parameters.width, 'x', planeGeometry.parameters.height);
-      console.log('  - Canvas size:', renderer.domElement.width, 'x', renderer.domElement.height);
-      console.log('  - Canvas client size:', renderer.domElement.clientWidth, 'x', renderer.domElement.clientHeight);
-      console.log('  - Window size:', window.innerWidth, 'x', window.innerHeight);
-      console.log('  - Pixel ratio:', window.devicePixelRatio);
-      console.log('  - Material type:', planeMaterial.type);
+      htmlRenderer.addObject(htmlDiv, screenMesh);
 
 
 
@@ -204,8 +177,11 @@ export default function ParticleFieldVanilla() {
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
-      controls.minDistance = 2;
-      controls.maxDistance = 20;
+      controls.enablePan = false;
+      controls.minDistance = 1.5;
+      controls.maxDistance = 18;
+      controls.maxPolarAngle = Math.PI / 2 - 0.05;
+      controls.target.set(0, 1, -8);
       
       // Setup postprocessing with enhanced bloom
       composer = new EffectComposer(renderer);
@@ -226,13 +202,6 @@ export default function ParticleFieldVanilla() {
         controls.enabled = true;
       });
 
-      // Mouse move handler
-      const handleMouseMove = (event: MouseEvent) => {
-        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-      };
-      window.addEventListener('mousemove', handleMouseMove);
-
       // Handle window resize
       const handleResize = () => {
         camera.aspect = window.innerWidth / window.innerHeight;
@@ -251,56 +220,6 @@ export default function ParticleFieldVanilla() {
       function animate() {
         animationFrameId = requestAnimationFrame(animate);
 
-        // Animate particles
-        const positions = particles.geometry.attributes.position.array as Float32Array;
-        const colors = particles.geometry.attributes.color.array as Float32Array;
-        const time = Date.now() * 0.001;
-
-        for (let i = 0; i < particleCount * 3; i += 3) {
-          const x = positions[i];
-          const y = positions[i + 1];
-          const z = positions[i + 2];
-
-          // Wave motion with rotation
-          positions[i + 1] += Math.sin(time + x) * 0.01;
-          positions[i + 2] += Math.cos(time + y) * 0.01;
-
-          // Spiral motion
-          const angle = time * 0.5;
-          const radius = Math.sqrt(x * x + z * z);
-          if (radius > 0.1) {
-            const newAngle = Math.atan2(z, x) + 0.001;
-            positions[i] = Math.cos(newAngle) * radius;
-            positions[i + 2] = Math.sin(newAngle) * radius;
-          }
-
-          // Mouse interaction with stronger effect
-          const dx = mouse.x * 5 - x;
-          const dy = mouse.y * 5 - y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          if (distance < 2.5) {
-            const force = (2.5 - distance) / 2.5;
-            positions[i] += dx * 0.02 * force;
-            positions[i + 1] += dy * 0.02 * force;
-            
-            // Color pulse on interaction
-            colors[i] = Math.min(1.0, colors[i] + 0.1 * force);
-            colors[i + 1] = Math.min(1.0, colors[i + 1] + 0.1 * force);
-          } else {
-            // Fade back to original colors
-            const t = (i / 3) / particleCount;
-            colors[i] = colors[i] * 0.95 + (0.2 + t * 0.8) * 0.05;
-            colors[i + 1] = colors[i + 1] * 0.95 + (0.4 + t * 0.4) * 0.05;
-          }
-        }
-
-        particles.geometry.attributes.position.needsUpdate = true;
-        particles.geometry.attributes.color.needsUpdate = true;
-        
-        // Rotate particle system slowly
-        particles.rotation.y += 0.0005;
-        
         // Update controls
         controls.update();
 
@@ -324,7 +243,6 @@ export default function ParticleFieldVanilla() {
 
       // Store cleanup function
       cleanupRef.current = () => {
-        window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('resize', handleResize);
         cancelAnimationFrame(animationFrameId);
         
@@ -349,13 +267,30 @@ export default function ParticleFieldVanilla() {
           containerRef.current?.removeChild(renderer.domElement);
         }
         
-        if (particles) {
-          particles.geometry.dispose();
-          (particles.material as THREE.Material).dispose();
+        if (floorMesh) {
+          floorMesh.geometry.dispose();
+          (floorMesh.material as THREE.Material).dispose();
+          scene.remove(floorMesh);
         }
-        
-        if (group) {
-          scene.remove(group);
+
+        if (tvMesh) {
+          tvMesh.geometry.dispose();
+          (tvMesh.material as THREE.Material).dispose();
+          scene.remove(tvMesh);
+        }
+
+        if (screenMesh) {
+          screenMesh.geometry.dispose();
+          (screenMesh.material as THREE.Material).dispose();
+          scene.remove(screenMesh);
+        }
+
+        if (ambientLight) {
+          scene.remove(ambientLight);
+        }
+
+        if (spotLight) {
+          scene.remove(spotLight);
         }
       };
     }
