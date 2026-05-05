@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BloomEffect, EffectComposer, EffectPass, RenderPass } from 'postprocessing';
 
 export default function ParticleFieldVanilla() {
@@ -18,13 +19,14 @@ export default function ParticleFieldVanilla() {
     let renderer: THREE.WebGLRenderer;
     let htmlRenderer: any;
     let htmlDiv: HTMLDivElement;
-    let tvMesh: THREE.Mesh;
+    let tvMesh: THREE.Object3D;
     let screenMesh: THREE.Mesh;
     let floorMesh: THREE.Mesh;
     let ambientLight: THREE.AmbientLight;
     let spotLight: THREE.SpotLight;
     let controls: OrbitControls;
     let composer: EffectComposer;
+    let htmlTextureFlipped = false;
 
     async function init() {
       // Import html-in-canvas modules
@@ -92,17 +94,34 @@ export default function ParticleFieldVanilla() {
       floorMesh.receiveShadow = true;
       scene.add(floorMesh);
 
-      // Subject cube
-      const tvGeometry = new THREE.BoxGeometry(2, 2, 2);
-      const tvMaterial = new THREE.MeshStandardMaterial({
-        color: 0x888888,
-        roughness: 0.7,
-        metalness: 0.0,
-      });
-      tvMesh = new THREE.Mesh(tvGeometry, tvMaterial);
-      tvMesh.position.set(0, 1, -8);
-      tvMesh.castShadow = true;
+      // TV placeholder group (GLB will be attached here)
+      tvMesh = new THREE.Group();
+      tvMesh.position.set(0, 0, -8);
       scene.add(tvMesh);
+
+      const gltfLoader = new GLTFLoader();
+      gltfLoader.load('/content/tv.glb', (gltf) => {
+        const model = gltf.scene;
+        model.position.set(0, 0, 0);
+        model.scale.set(4, 4, 4);
+        model.rotation.y = Math.PI;
+        const screenNode = model.getObjectByName('Screen');
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+          }
+        });
+        tvMesh.add(model);
+
+        if (screenNode && screenMesh) {
+          screenMesh.position.set(0, 0, 0);
+          screenMesh.rotation.set(0, 0, 0);
+          screenMesh.scale.set(1, 1, 1);
+          screenNode.add(screenMesh);
+        }
+      });
 
       spotLight = new THREE.SpotLight(0xffffff, 2.4, 40, Math.PI / 7, 0.2, 0.7);
       spotLight.position.set(0, 7, -8);
@@ -116,8 +135,8 @@ export default function ParticleFieldVanilla() {
       // Create HTML element - match the examples (no box-sizing!)
       htmlDiv = document.createElement('div');
       htmlDiv.style.cssText = `
-        width: 400px;
-        height: 400px;
+        width: 195px;
+        height: 138px;
         padding: 10px;
         background: rgba(5, 5, 5, 0.92);
         color: #eaeaea;
@@ -125,47 +144,39 @@ export default function ParticleFieldVanilla() {
         overflow: auto;
       `;
       htmlDiv.innerHTML = `
-        <h2 style="margin: 0 0 10px 0; color: #8fb3ff; font-size: 16px;">A Vision</h2>
-        <div style="font-size: 12px; line-height: 1.5; color: #d6d6d6;">
-          <p style="margin: 0 0 10px 0;">"A vision I had in my sleep last night - as distinguished from a dream which is mere sorting and cataloguing of the day's events by the subconscious. This was a vision, fresh and clear as a mountain stream - the mind revealing itself to itself. In my vision, I was on the veranda of a vast estate, a palazzo of some fantastic proportion. There seemed to emanate from it a light from within - this gleaming radiant marble. I had known this place. I had in fact been born and raised there. This was my first return, a reunion with the deepest wellsprings of my being. Wandering about, I was happy that the house had been immaculately maintained. There had been added a number of additional rooms, but in a way it blended so seamlessly with the original construction, one would never detect any difference. Returning to the house's grand foyer, there came a knock at the door. My son was standing there. He was happy and care-free, clearly living a life of deep harmony and joy. We embraced - a warm and loving embrace, nothing withheld. We were in this moment one. My vision ended. I awoke with a tremendous of optimism and confidence in you and your future. That was my vision; it was of you. I'm so glad to have had this opportunity to share it with you. I wish you nothing but the very best, always."</p>
-        </div>
-        <div style="margin: 12px 0 0 0; padding: 0 15%;">
-          <img src="/content/briggs.jpg" alt="Briggs" style="display: block; width: 100%; height: auto;">
-        </div>
-        <div style="margin: 12px 0 0 0; padding: 0 10%;">
-          <a href="https://vimeo.com/1187123557" target="_blank" rel="noopener" style="text-decoration: none;">
-            <div style="width: 100%; background: #111; border: 1px solid #2b2b2b; padding: 14px; box-sizing: border-box;">
-              <div style="font-size: 12px; color: #cfcfcf; margin: 0 0 8px 0;">Watch the video on Vimeo</div>
-              <div style="display: inline-block; padding: 6px 10px; background: #2d6bff; color: #fff; font-size: 12px;">Play</div>
-            </div>
-          </a>
-        </div>
+        <a href="https://vimeo.com/1187123557" target="_blank" rel="noopener" style="text-decoration: none; display: block; width: 100%; height: 100%;">
+          <div style="width: 100%; height: 100%; background: #111; border: 1px solid #2b2b2b; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 8px;">
+            <div style="font-size: 11px; color: #9aa0a6; text-transform: uppercase; letter-spacing: 0.08em;">ONE WAY BUDDHA</div>
+            <div style="font-size: 11px; color: #9aa0a6;">Click and drag to orbit the scene.</div>
+            <div style="font-size: 12px; color: #cfcfcf;">Watch the video on Vimeo</div>
+            <div style="display: inline-block; padding: 6px 10px; background: #2d6bff; color: #fff; font-size: 12px; width: fit-content;">Play</div>
+          </div>
+        </a>
       `;
       
       // CRITICAL: Add HTML element INSIDE the canvas, not to body
       renderer.domElement.appendChild(htmlDiv);
       
       // Set explicit dimensions in JavaScript (like the official example does)
-      htmlDiv.style.width = '400px';
-      htmlDiv.style.height = '400px';
+      htmlDiv.style.width = '195px';
+      htmlDiv.style.height = '138px';
 
       // Create screen plane - match the example ratio
-      const planeGeometry = new THREE.PlaneGeometry(2, 2);
+      const planeGeometry = new THREE.PlaneGeometry(0.975, 0.69);
       
       // Explicitly set bounding box to match plane size
       planeGeometry.boundingBox = new THREE.Box3(
-        new THREE.Vector3(-1, -1, 0),
-        new THREE.Vector3(1, 1, 0)
+        new THREE.Vector3(-0.4875, -0.345, 0),
+        new THREE.Vector3(0.4875, 0.345, 0)
       );
       
       // Create a basic material - the polyfill will replace it with the HTML texture
       const planeMaterial = new THREE.MeshBasicMaterial({
         color: 0xffffff,
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide,
       });
       screenMesh = new THREE.Mesh(planeGeometry, planeMaterial);
       screenMesh.position.set(0, 1, -6.98);
-      screenMesh.rotation.y = Math.PI;
       scene.add(screenMesh);
 
       // CRITICAL: Register the HTML element with the mesh using ThreeHTMLRenderer
@@ -235,6 +246,18 @@ export default function ParticleFieldVanilla() {
           }
         }
 
+        if (!htmlTextureFlipped && screenMesh) {
+          const material = screenMesh.material as THREE.MeshBasicMaterial;
+          if (material.map) {
+            material.map.wrapS = THREE.RepeatWrapping;
+            material.map.wrapT = THREE.RepeatWrapping;
+            material.map.repeat.set(1, -1);
+            material.map.offset.set(0, 1);
+            material.map.needsUpdate = true;
+            htmlTextureFlipped = true;
+          }
+        }
+
         // Render scene with postprocessing
         composer.render();
       }
@@ -274,8 +297,17 @@ export default function ParticleFieldVanilla() {
         }
 
         if (tvMesh) {
-          tvMesh.geometry.dispose();
-          (tvMesh.material as THREE.Material).dispose();
+          tvMesh.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              const mesh = child as THREE.Mesh;
+              if (mesh.geometry) mesh.geometry.dispose();
+              if (Array.isArray(mesh.material)) {
+                mesh.material.forEach((material) => material.dispose());
+              } else if (mesh.material) {
+                mesh.material.dispose();
+              }
+            }
+          });
           scene.remove(tvMesh);
         }
 
