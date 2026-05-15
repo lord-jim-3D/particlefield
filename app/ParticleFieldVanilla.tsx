@@ -251,7 +251,7 @@ export default function ParticleFieldVanilla() {
         scrollContainer.addEventListener('scroll', updateScrollbar);
         updateScrollbar();
       }
-      if (scrollContainer && scrollbarTrack && scrollbarThumb && updateScrollbar) {
+      if (scrollContainer && scrollbarTrack && scrollbarThumb) {
         onScrollbarDragStart = (event: MouseEvent) => {
           event.preventDefault();
           isScrollbarDragging = true;
