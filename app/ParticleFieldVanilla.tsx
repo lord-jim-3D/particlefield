@@ -24,9 +24,21 @@ export default function ParticleFieldVanilla() {
     let floorMesh: THREE.Mesh;
     let ambientLight: THREE.AmbientLight;
     let spotLight: THREE.SpotLight;
+    let sideLight: THREE.SpotLight;
+    let sideLightLeft: THREE.SpotLight;
+    let frontLight: THREE.SpotLight;
     let controls: OrbitControls;
     let composer: EffectComposer;
     let htmlTextureFlipped = false;
+    let scrollContainer: HTMLDivElement | null = null;
+    let scrollbarTrack: HTMLDivElement | null = null;
+    let scrollbarThumb: HTMLDivElement | null = null;
+    let updateScrollbar: (() => void) | null = null;
+    let isScrollbarDragging = false;
+    let onScrollbarDragStart: ((event: MouseEvent) => void) | null = null;
+    let onScrollbarDragMove: ((event: MouseEvent) => void) | null = null;
+    let onScrollbarDragEnd: ((event: MouseEvent) => void) | null = null;
+    let onScrollbarTrackClick: ((event: MouseEvent) => void) | null = null;
 
     async function init() {
       // Import html-in-canvas modules
@@ -132,26 +144,59 @@ export default function ParticleFieldVanilla() {
       scene.add(spotLight);
       scene.add(spotLight.target);
 
+      sideLight = new THREE.SpotLight(0xffffff, 1.2, 30, Math.PI / 6, 0.3, 0.7);
+      sideLight.position.set(4, 2.5, -7);
+      sideLight.target = tvMesh;
+      scene.add(sideLight);
+      scene.add(sideLight.target);
+
+      sideLightLeft = new THREE.SpotLight(0xffffff, 0.7, 30, Math.PI / 6, 0.3, 0.7);
+      sideLightLeft.position.set(-4, 2.5, -7);
+      sideLightLeft.target = tvMesh;
+      scene.add(sideLightLeft);
+      scene.add(sideLightLeft.target);
+
+      frontLight = new THREE.SpotLight(0xffffff, 1.2, 30, Math.PI / 6, 0.3, 0.7);
+      frontLight.position.set(0, 2.2, -2.5);
+      frontLight.target = tvMesh;
+      scene.add(frontLight);
+      scene.add(frontLight.target);
+
       // Create HTML element - match the examples (no box-sizing!)
       htmlDiv = document.createElement('div');
       htmlDiv.style.cssText = `
         width: 195px;
         height: 138px;
         padding: 10px;
-        background: rgba(5, 5, 5, 0.92);
+        background: transparent;
         color: #eaeaea;
         font-family: 'Helvetica Neue', Arial, sans-serif;
-        overflow: auto;
+        overflow: hidden;
       `;
       htmlDiv.innerHTML = `
-        <a href="https://vimeo.com/1187123557" target="_blank" rel="noopener" style="text-decoration: none; display: block; width: 100%; height: 100%;">
-          <div style="width: 100%; height: 100%; background: #111; border: 1px solid #2b2b2b; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; gap: 8px;">
-            <div style="font-size: 11px; color: #9aa0a6; text-transform: uppercase; letter-spacing: 0.08em;">ONE WAY BUDDHA</div>
-            <div style="font-size: 11px; color: #9aa0a6;">Click and drag to orbit the scene.</div>
-            <div style="font-size: 12px; color: #cfcfcf;">Watch the video on Vimeo</div>
-            <div style="display: inline-block; padding: 6px 10px; background: #2d6bff; color: #fff; font-size: 12px; width: fit-content;">Play</div>
+        <div style="display: block; width: 100%; height: 100%;">
+          <style>
+            .owb-scrollwrap { position: relative; width: 100%; height: 100%; }
+            .owb-scroll { overflow-y: auto; scrollbar-width: none; }
+            .owb-scroll::-webkit-scrollbar { display: none; }
+            .owb-scrollbar { position: absolute; right: 4px; top: 18px; bottom: 12px; width: 6px; background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+            .owb-thumb { width: 100%; background: #8a8a8a; border-radius: 4px; transform: translateY(0); }
+          </style>
+          <div class="owb-scrollwrap">
+            <div class="owb-scroll" style="width: 100%; height: 100%; background: transparent; border: none; padding: 18px 12px 12px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start; gap: 8px;">
+              <div style="font-size: 11px; color: #9aa0a6; text-transform: uppercase; letter-spacing: 0.08em;">ONE WAY BUDDHA</div>
+              <div style="font-size: 11px; color: #9aa0a6;">Click and drag to orbit the scene.</div>
+              <div style="font-size: 9px; color: #bfc2c7; line-height: 1.35;">
+                One Way Buddha presents a new perspective on Nam June Paik's TV Buddha, updating his reflections on cutting-edge tech to represent feelings of discomfort and invasive inevitability present in contemporary and future technologies. Viewers are presented with a figure in a CRT. While viewing, the figure hides, and when viewers turn away, the figure emerges to watch them, occasionally taunting the viewer with laughs and whispers. The feelings of surveillance, mystical awareness, and constant attention reflect today's rapidly advancing technologies, highlighting this new level of esoteric complexity present in modern tech by housing the work in an antique CRT screen. This juxtaposition of old tech, supernatural subject matter, and advanced recognition technology acts to emulate the future of tech, a place where, through tools like coding agents, the complexity of technology continues to advance while our understanding diminishes, leaving us entrenched in technologies indistinguishable from magic or ghosts.
+              </div>
+              <div style="font-size: 12px; color: #cfcfcf;">Watch One Way Buddha Here</div>
+              <a href="https://vimeo.com/1187123557" target="_blank" rel="noopener" style="text-decoration: none; display: inline-block; width: fit-content;">
+                <div style="display: inline-block; padding: 6px 10px; background: #2d6bff; color: #fff; font-size: 12px; width: fit-content;">Play</div>
+              </a>
+            </div>
+            <div class="owb-scrollbar"><div class="owb-thumb"></div></div>
           </div>
-        </a>
+        </div>
       `;
       
       // CRITICAL: Add HTML element INSIDE the canvas, not to body
@@ -181,6 +226,73 @@ export default function ParticleFieldVanilla() {
 
       // CRITICAL: Register the HTML element with the mesh using ThreeHTMLRenderer
       htmlRenderer.addObject(htmlDiv, screenMesh);
+
+      scrollContainer = htmlDiv.querySelector('.owb-scroll') as HTMLDivElement | null;
+      scrollbarTrack = htmlDiv.querySelector('.owb-scrollbar') as HTMLDivElement | null;
+      scrollbarThumb = htmlDiv.querySelector('.owb-thumb') as HTMLDivElement | null;
+      updateScrollbar = () => {
+        if (!scrollContainer || !scrollbarTrack || !scrollbarThumb) return;
+        const contentHeight = scrollContainer.scrollHeight;
+        const viewHeight = scrollContainer.clientHeight;
+        if (contentHeight <= viewHeight) {
+          scrollbarTrack.style.display = 'none';
+          return;
+        }
+        scrollbarTrack.style.display = 'block';
+        const trackHeight = scrollbarTrack.clientHeight;
+        const thumbHeight = Math.max((viewHeight / contentHeight) * trackHeight, 12);
+        const maxScrollTop = contentHeight - viewHeight;
+        const maxThumbTop = trackHeight - thumbHeight;
+        const thumbTop = maxScrollTop > 0 ? (scrollContainer.scrollTop / maxScrollTop) * maxThumbTop : 0;
+        scrollbarThumb.style.height = `${thumbHeight}px`;
+        scrollbarThumb.style.transform = `translateY(${thumbTop}px)`;
+      };
+      if (scrollContainer && updateScrollbar) {
+        scrollContainer.addEventListener('scroll', updateScrollbar);
+        updateScrollbar();
+      }
+      if (scrollContainer && scrollbarTrack && scrollbarThumb && updateScrollbar) {
+        onScrollbarDragStart = (event: MouseEvent) => {
+          event.preventDefault();
+          isScrollbarDragging = true;
+        };
+        onScrollbarDragMove = (event: MouseEvent) => {
+          if (!isScrollbarDragging || !scrollContainer || !scrollbarTrack || !scrollbarThumb) return;
+          const trackRect = scrollbarTrack.getBoundingClientRect();
+          const thumbRect = scrollbarThumb.getBoundingClientRect();
+          const trackHeight = scrollbarTrack.clientHeight;
+          const contentHeight = scrollContainer.scrollHeight;
+          const viewHeight = scrollContainer.clientHeight;
+          const maxScrollTop = contentHeight - viewHeight;
+          const maxThumbTop = Math.max(trackHeight - thumbRect.height, 1);
+          const thumbTop = Math.min(
+            Math.max(event.clientY - trackRect.top - thumbRect.height / 2, 0),
+            maxThumbTop
+          );
+          const scrollTop = (thumbTop / maxThumbTop) * maxScrollTop;
+          scrollContainer.scrollTop = scrollTop;
+        };
+        onScrollbarDragEnd = (event: MouseEvent) => {
+          if (!isScrollbarDragging) return;
+          event.preventDefault();
+          isScrollbarDragging = false;
+        };
+        onScrollbarTrackClick = (event: MouseEvent) => {
+          if (!scrollContainer || !scrollbarTrack) return;
+          event.preventDefault();
+          const trackRect = scrollbarTrack.getBoundingClientRect();
+          const clickOffset = event.clientY - trackRect.top;
+          const contentHeight = scrollContainer.scrollHeight;
+          const viewHeight = scrollContainer.clientHeight;
+          const maxScrollTop = contentHeight - viewHeight;
+          const scrollTop = Math.min(Math.max((clickOffset / trackRect.height) * maxScrollTop, 0), maxScrollTop);
+          scrollContainer.scrollTop = scrollTop;
+        };
+        scrollbarThumb.addEventListener('mousedown', onScrollbarDragStart);
+        scrollbarTrack.addEventListener('mousedown', onScrollbarTrackClick);
+        document.addEventListener('mousemove', onScrollbarDragMove);
+        document.addEventListener('mouseup', onScrollbarDragEnd);
+      }
 
 
 
@@ -223,6 +335,9 @@ export default function ParticleFieldVanilla() {
         // Update HTML overlay renderer on resize
         if (htmlRenderer && htmlRenderer.overlayRenderer) {
           htmlRenderer.overlayRenderer.update();
+        }
+        if (updateScrollbar) {
+          updateScrollbar();
         }
       };
       window.addEventListener('resize', handleResize);
@@ -271,6 +386,22 @@ export default function ParticleFieldVanilla() {
         
         if (controls) {
           controls.dispose();
+        }
+
+        if (scrollContainer && updateScrollbar) {
+          scrollContainer.removeEventListener('scroll', updateScrollbar);
+        }
+        if (scrollbarThumb && onScrollbarDragStart) {
+          scrollbarThumb.removeEventListener('mousedown', onScrollbarDragStart);
+        }
+        if (scrollbarTrack && onScrollbarTrackClick) {
+          scrollbarTrack.removeEventListener('mousedown', onScrollbarTrackClick);
+        }
+        if (onScrollbarDragMove) {
+          document.removeEventListener('mousemove', onScrollbarDragMove);
+        }
+        if (onScrollbarDragEnd) {
+          document.removeEventListener('mouseup', onScrollbarDragEnd);
         }
         
         if (composer) {
@@ -323,6 +454,18 @@ export default function ParticleFieldVanilla() {
 
         if (spotLight) {
           scene.remove(spotLight);
+        }
+
+        if (sideLight) {
+          scene.remove(sideLight);
+        }
+
+        if (sideLightLeft) {
+          scene.remove(sideLightLeft);
+        }
+
+        if (frontLight) {
+          scene.remove(frontLight);
         }
       };
     }
